@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GPS Measurements Visualization</title>
+    <!-- Plotly.js library for graphing -->
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #f5f5f5;
+        }
+        #plot {  /* Grafik alanının boyutu */
+            width: 80%;
+            height: 500px;
+        }
+        .controls {
+            margin-top: 20px;
+        }
+        .controls input {   /* Giriş alanlarının stil ayarları */
+            margin: 5px;
+        }
+    </style>
+</head>
+<body>
+    
+    <h1>GPS Measurements Visualization</h1>
+    <div id="plot"></div>
+
+    <div class="controls">
+        <label for="messageFrequency">Message Frequency (messages/sec):</label>
+        <input type="number" id="messageFrequency" value="1" min="1" max="10">
+        
+        <label for="satelliteSpeed">Satellite Speed (km/h):</label>
+        <input type="number" id="satelliteSpeed" value="100">
+        
+        <label for="objectSpeed">Object Speed (km/h):</label>
+        <input type="number" id="objectSpeed" value="10">
+        
+        <button onclick="updateConfig()">Update Config</button>
+    </div>
+
+    <script>
+         // Plot initialization
+        //GPS ödevi bir nesnenin konumunu bulmayı amaçlarken
+         // Grafik için başlangıç verisi (uydular ve nesne)
+        let data = [
+            {
+                 // Uyduların pozisyonları (x ve y)
+                x: [], 
+                y: [],
+                mode: 'markers',
+                marker: { color: 'blue', size: 10 },
+                name: 'Satellites'
+            },
+            {
+                // Nesnenin pozisyonları (x ve y)
+                x: [],
+                y: [],
+                mode: 'markers',
+                marker: { color: 'red', size: 15 },
+                name: 'Object'
+            }
+        ];
+ // Grafiğin başlık ve eksen ayarları
+        let layout = {
+            title: 'GPS Object and Satellites Positions',
+            xaxis: { title: 'X Coordinate (km)' },
+            yaxis: { title: 'Y Coordinate (km)' },
+            showlegend: true
+        };
+  // Plotly ile grafiğin oluşturulması
+        Plotly.newPlot('plot', data, layout);
+
+        // WebSocket connection :
+        // curl -X POST http://localhost:4001/config -H "Content-Type: application/json" -d "{ \"messageFrequency\": 2, \"satelliteSpeed\": 120, \"objectSpeed\": 20 }"
+ 
+        const socket = new WebSocket('ws://localhost:4001');
+
+        socket.onopen = () => {
+            console.log('Connected to WebSocket server');
+        };
+// Sunucudan mesaj alındığında yapılacak işlemler
+        socket.onmessage = (event) => {
+             // Alınan veri JSON formatında çözümleniyor
+            const message = JSON.parse(event.data);
+            console.log('Received data:', message);
+            
+            // Assuming the object is identified separately by a known ID or logic
+            if (message.id === 'object') {
+                updateObjectPosition(message.x, message.y);
+            } else {
+                updateSatellitePosition(message.x, message.y);
+            }
+        };
+   // WebSocket bağlantısı kapandığında yapılacaklar
+        socket.onclose = () => {
+            console.log('Connection closed');
+        };
+ // WebSocket bağlantısında hata oluşursa yapılacaklar
+        socket.onerror = (error) => {
+            console.error('WebSocket error:', error);
+        };
+
+        // Function to update object position
+        function updateObjectPosition(x, y) {
+            Plotly.restyle('plot', {
+                x: [[x]],
+                y: [[y]]
+            }, 1);  // Update the 'Object' trace (index 1)
+        }
+
+        // Function to update satellite positions
+        function updateSatellitePosition(x, y) {
+// Uydular (mavi noktalar) için grafik verisi uzatılıyor (yeni veri ekleniyor)
+            Plotly.extendTraces('plot', {
+                x: [[x]],
+                y: [[y]]
+            }, [0]);  // Update the 'Satellites' trace (index 0)
+        }
+
+        // Function to update GPS config via API
+        function updateConfig() {
+            const messageFrequency = document.getElementById('messageFrequency').value;
+            const satelliteSpeed = document.getElementById('satelliteSpeed').value;
+            const objectSpeed = document.getElementById('objectSpeed').value;
+ // Konfigürasyon verisi bir JSON objesi olarak oluşturuluyor
+            const config = {
+                messageFrequency: parseInt(messageFrequency),
+                satelliteSpeed: parseInt(satelliteSpeed),
+                objectSpeed: parseInt(objectSpeed)
+            };
+ // Konfigürasyon verisi sunucuya gönderiliyor
+            fetch('http://localhost:4001/config', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(config)
+            })
+            .then(response => response.json())
+            .then(data => {
+                console.log('Config updated:', data);
+            })
+            .catch(error => {
+                console.error('Error updating config:', error);
+            });
+        }
+    </script>
+
+</body>
+</html>
