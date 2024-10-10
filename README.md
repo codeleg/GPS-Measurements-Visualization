@@ -74,28 +74,33 @@ receivedAt: Timestamp when the message was received by the object (in millisecon
 
 Conclusion
 
-This project successfully demonstrates a system for visualizing GPS measurements in real-time. The web application connects to an emulated GPS service, processes incoming data, and displays object and satellite positions graphically. Additionally, users can modify GPS settings dynamically, showcasing a practical application of WebSocket communication and data visualization in real-world scenarios like navigation systems.
-WebSocket Connection and Data Reading:
-
 1-The code connects to a server at localhost:4001 using WebSocket.
 
 It receives JSON formatted data from the server (via the onmessage event handler).
 Based on the received data, if the data id is 'object', it updates the object's position using the updateObjectPosition function; otherwise, it updates the satellites' positions using the updateSatellitePosition function.
+
 Graph Visualization:
 
 2-A graph is created using the Plotly.js library (Plotly.newPlot).
 
 Two different traces are defined: one representing satellites (Satellites) and the other representing the object (Object).
 The updateObjectPosition and updateSatellitePosition functions update the graph traces based on the incoming data (using Plotly.restyle and Plotly.extendTraces).
+
 API Configuration Update:
 
 3-The user interface contains input fields (messageFrequency, satelliteSpeed, objectSpeed) for configuration data.
 
 This data is sent as a POST request to localhost:4001/config using the fetch function.
 The response from the server (response.json()) is logged to the console.
+
 User Interface:
 
 4-It offers a simple and clear user interface.
 
 The layout includes a graph area (#plot), input fields, and an update button (Update Config).
 The input fields have predefined initial values and limits (min, max).
+
+Finally : 
+
+This project successfully demonstrates a system for visualizing GPS measurements in real-time. The web application connects to an emulated GPS service, processes incoming data, and displays object and satellite positions graphically. Additionally, users can modify GPS settings dynamically, showcasing a practical application of WebSocket communication and data visualization in real-world scenarios like navigation systems.
+WebSocket Connection and Data Reading
