@@ -47,112 +47,143 @@
         <button onclick="updateConfig()">Update Config</button>
     </div>
 
-    <script>
-         // Plot initialization
-        //GPS ödevi bir nesnenin konumunu bulmayı amaçlarken
-         // Grafik için başlangıç verisi (uydular ve nesne)
-        let data = [
-            {
-                 // Uyduların pozisyonları (x ve y)
-                x: [], 
-                y: [],
-                mode: 'markers',
-                marker: { color: 'blue', size: 10 },
-                name: 'Satellites'
-            },
-            {
-                // Nesnenin pozisyonları (x ve y)
-                x: [],
-                y: [],
-                mode: 'markers',
-                marker: { color: 'red', size: 15 },
-                name: 'Object'
+      <script>
+        // Constants
+        const SPEED_OF_LIGHT = 300000; // Speed of light in km/s, used for distance calculations.
+        const ws = new WebSocket('ws://localhost:4000'); // WebSocket connection to the server.
+        let angles = [], distances = [], signalStrengths = []; // Arrays to store data for the radar plot.
+
+        // Function to update the polar plot using Plotly
+        function updatePlot() {
+            // Check if there is any data available to plot
+            if (!angles.length || !distances.length || !signalStrengths.length) {
+                console.log("No data to plot.");
+                return; // Stop if there's no data.
             }
-        ];
- // Grafiğin başlık ve eksen ayarları
-        let layout = {
-            title: 'GPS Object and Satellites Positions',
-            xaxis: { title: 'X Coordinate (km)' },
-            yaxis: { title: 'Y Coordinate (km)' },
-            showlegend: true
-        };
-  // Plotly ile grafiğin oluşturulması
-        Plotly.newPlot('plot', data, layout);
 
-        // WebSocket connection :
-        // curl -X POST http://localhost:4001/config -H "Content-Type: application/json" -d "{ \"messageFrequency\": 2, \"satelliteSpeed\": 120, \"objectSpeed\": 20 }"
- 
-        const socket = new WebSocket('ws://localhost:4001');
+            // Define the data structure for Plotly scatterpolar chart
+            const data = [{
+                type: 'scatterpolar', // Polar scatter plot
+                r: distances, // Radial axis values (distances)
+                theta: angles, // Angular axis values (angles)
+                mode: 'markers', // Display markers at each point
+                marker: {
+                    size: 10, // Marker size
+                    color: signalStrengths, // Color based on signal strength
+                    colorscale: 'Viridis', // Use the Viridis color scale
+                    showscale: true // Show the color scale on the chart
+                }
+            }];
 
-        socket.onopen = () => {
-            console.log('Connected to WebSocket server');
-        };
-// Sunucudan mesaj alındığında yapılacak işlemler
-        socket.onmessage = (event) => {
-             // Alınan veri JSON formatında çözümleniyor
-            const message = JSON.parse(event.data);
-            console.log('Received data:', message);
-            
-            // Assuming the object is identified separately by a known ID or logic
-            if (message.id === 'object') {
-                updateObjectPosition(message.x, message.y);
-            } else {
-                updateSatellitePosition(message.x, message.y);
-            }
-        };
-   // WebSocket bağlantısı kapandığında yapılacaklar
-        socket.onclose = () => {
-            console.log('Connection closed');
-        };
- // WebSocket bağlantısında hata oluşursa yapılacaklar
-        socket.onerror = (error) => {
-            console.error('WebSocket error:', error);
-        };
-
-        // Function to update object position
-        function updateObjectPosition(x, y) {
-            Plotly.restyle('plot', {
-                x: [[x]],
-                y: [[y]]
-            }, 1);  // Update the 'Object' trace (index 1)
-        }
-
-        // Function to update satellite positions
-        function updateSatellitePosition(x, y) {
-// Uydular (mavi noktalar) için grafik verisi uzatılıyor (yeni veri ekleniyor)
-            Plotly.extendTraces('plot', {
-                x: [[x]],
-                y: [[y]]
-            }, [0]);  // Update the 'Satellites' trace (index 0)
-        }
-
-        // Function to update GPS config via API
-        function updateConfig() {
-            const messageFrequency = document.getElementById('messageFrequency').value;
-            const satelliteSpeed = document.getElementById('satelliteSpeed').value;
-            const objectSpeed = document.getElementById('objectSpeed').value;
- // Konfigürasyon verisi bir JSON objesi olarak oluşturuluyor
-            const config = {
-                messageFrequency: parseInt(messageFrequency),
-                satelliteSpeed: parseInt(satelliteSpeed),
-                objectSpeed: parseInt(objectSpeed)
-            };
- // Konfigürasyon verisi sunucuya gönderiliyor
-            fetch('http://localhost:4001/config', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
+            // Layout configuration for the polar chart
+            const layout = {
+                polar: {
+                    radialaxis: {
+                        visible: true, // Show the radial axis
+                        range: [0, Math.max(...distances, 100)] // Set range based on max distance or 100
+                    },
+                    angularaxis: {
+                        direction: 'clockwise', // Angular direction is clockwise
+                        rotation: 90 // Start angle at 90 degrees
+                    }
                 },
-                body: JSON.stringify(config)
-            })
-            .then(response => response.json())
-            .then(data => {
-                console.log('Config updated:', data);
-            })
-            .catch(error => {
-                console.error('Error updating config:', error);
-            });
+                showlegend: false // Disable the legend
+            };
+
+            // Use Plotly to update the chart with the new data and layout
+            Plotly.react('myPolarChart', data, layout);
         }
+
+        // Handle incoming WebSocket messages from the server
+        ws.onmessage = function (event) {
+            try {
+                const data = JSON.parse(event.data); // Parse incoming data as JSON
+                console.log('Received data:', data); // Log the received data
+
+                // Check if the data contains scan angle and echo responses
+                if (data.scanAngle !== undefined && Array.isArray(data.echoResponses)) {
+                    // Clear the existing data arrays
+                    angles = [];
+                    distances = [];
+                    signalStrengths = [];
+
+                    // Process each echo response
+                    data.echoResponses.forEach(response => {
+                        const distance = (SPEED_OF_LIGHT * response.time) / 2; // Calculate distance
+                        angles.push(data.scanAngle); // Store the scan angle
+                        distances.push(distance); // Store the calculated distance
+                        signalStrengths.push(response.power * 100); // Store signal strength scaled by 100
+                    });
+
+                    updatePlot(); // Update the chart with the new data
+                } else {
+                    console.warn('Unexpected data format:', data); // Log a warning for unexpected data
+                }
+            } catch (error) {
+                console.error('Error parsing message:', error); // Log errors during message parsing
+            }
+        };
+
+        // WebSocket connection event handlers
+        ws.onopen = () => console.log('WebSocket connection opened.'); // Log when WebSocket opens
+        ws.onclose = () => console.log('WebSocket connection closed.'); // Log when WebSocket closes
+        ws.onerror = error => console.error('WebSocket error:', error); // Log WebSocket errors
+
+        // Function to update radar parameters via API
+        function updateRadarParams(measurementsPerRotation, rotationSpeed, targetSpeed) {
+            // Create the configuration object
+            const config = {
+                measurementsPerRotation,
+                rotationSpeed,
+                targetSpeed
+            };
+
+            console.log('Sending config to API:', config); // Log the config being sent
+
+            // Send a PUT request to the server to update the radar parameters
+            fetch('http://localhost:4000/config', {
+                method: 'PUT', // Use the PUT method
+                headers: { 'Content-Type': 'application/json' }, // Set content type as JSON
+                body: JSON.stringify(config) // Send the config as JSON in the request body
+            })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Network response was not ok: ' + response.statusText); // Handle non-OK responses
+                    }
+                    return response.json(); // Parse the response as JSON
+                })
+                .then(data => {
+                    console.log('Radar parameters updated:', data); // Log the server response
+                    document.getElementById('errorMessage').textContent = ''; // Clear any error messages
+                    document.getElementById('successMessage').textContent = 'Radar parameters updated successfully!'; // Show success message
+                })
+                .catch(error => {
+                    console.error('Error updating radar parameters:', error); // Log any errors
+                    document.getElementById('errorMessage').textContent =
+                        'Error updating radar parameters: ' + error.message; // Display error message
+                    document.getElementById('successMessage').textContent = ''; // Clear success message on error
+                });
+        }
+
+        // Event listener for the update button click event
+        document.getElementById('updateParamsBtn').addEventListener('click', function () {
+            const angle = parseInt(document.getElementById('angleInput').value, 10); // Get angle input
+            const distance = parseInt(document.getElementById('distanceInput').value, 10); // Get distance input
+            const signalStrength = parseInt(document.getElementById('signalStrengthInput').value, 10); // Get signal strength input
+
+            // Validate the input values
+            if (isNaN(angle) || isNaN(distance) || isNaN(signalStrength) || angle < 0 || angle > 360 || distance < 0 || signalStrength < 0) {
+                document.getElementById('errorMessage').textContent = 'Please enter valid numbers!'; // Show error message
+                document.getElementById('successMessage').textContent = ''; // Clear success message
+                return; // Stop further execution on invalid input
+            }
+
+            updateRadarParams(angle, distance, signalStrength); // Update radar parameters using the inputs
+        });
+
+        // Initial parameter setup when the script loads
+        updateRadarParams(360, 10, 500); // Set default radar parameters
+
     </script>
 
 </body>
