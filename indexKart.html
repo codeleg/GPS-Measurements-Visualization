@@ -3,17 +3,22 @@
 <head>
     <meta charset="UTF-8">
     <title>GPS Object and Satellites Positions</title>
+        <!-- Link to the Plotly library for creating charts -->
+
     <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
 </head>
 <body>
     <h1>GPS Object and Satellites Positions Visualization</h1>
     <div id="plot" style="width: 100%; height: 600px;"></div>
-    
+
+      <!-- Configuration section for adjusting GPS settings -->
+
     <h3>GPS Configuration</h3>
     <label>Message Frequency: <input id="messageFrequency" type="number" value="2"></label><br>
     <label>Satellite Speed (km/h): <input id="satelliteSpeed" type="number" value="120"></label><br>
     <label>Object Speed (km/h): <input id="objectSpeed" type="number" value="20"></label><br>
     <button onclick="updateConfig()">Update Configuration</button>
+       <!-- Display feedback message after configuration update -->
     <p id="configFeedback"></p>
 
     <script>
@@ -21,43 +26,46 @@
         const MAX_QUEUE_SIZE = 5; // Queue limit for each satellite
         let satellitesData = {};  // Track satellite positions by ID
 
+         // Initial dataset for Plotly, with two series: satellites and the object
         let data = [
             {
-                x: [],
-                y: [],
-                mode: 'markers+text',
+                x: [],   // x coordinates of satellites
+                y: [],  // y coordinates of satellites
+                mode: 'markers+text', // Display markers with text labels for satellites
                 marker: { color: 'blue', size: 10 },
                 name: 'Satellites',
-                text: [],  // Text for annotations
+                text: [],  // Annotation text for satellites (e.g., satellite IDs)
                 textposition: 'top center'
             },
             {
                 x: [],
                 y: [],
-                mode: 'markers',
+                mode: 'markers', // Display object as a marker
                 marker: { color: 'red', size: 15 },
                 name: 'Object'
             }
         ];
-
+         // Layout configuration for the Plotly chart    
         let layout = {
             title: 'GPS Object and Satellites Positions',
             xaxis: { title: 'X Coordinate (km)' },
             yaxis: { title: 'Y Coordinate (km)' },
             showlegend: true
         };
-
+        // Initialize the Plotly chart in the designated div element
         Plotly.newPlot('plot', data, layout);
 
+        // Create a WebSocket connection to a server on localhost, port 4001
         const socket = new WebSocket('ws://localhost:4001');
 
+        // Create a WebSocket connection to a server on localhost, port 4001
         socket.onopen = () => console.log('Connected to WebSocket server');
-
+         // Handle incoming WebSocket messages
         socket.onmessage = (event) => {
             try {
-                const message = JSON.parse(event.data);
+                const message = JSON.parse(event.data); // Parse JSON data from the server
                 console.log('Received data:', message);
-
+                // If the message represents the object's position
                 if (message.id === 'object') {
                     updateObjectPosition(message.x, message.y);
                 } else {
@@ -79,45 +87,53 @@
 
         socket.onerror = (error) => console.error('WebSocket error:', error);
 
+        // Function to update the position of the object on the plot
         function updateObjectPosition(x, y) {
             Plotly.restyle('plot', {
-                x: [[x]],
+                x: [[x]], // Update x coordinate for the object series
                 y: [[y]]
-            }, 1);
+            }, 1);   // Refers to the second trace (object)
         }
-
+            // Function to update satellite positions on the plot
         function updateSatellitePosition(data) {
             satellitesData[data.id] = { x: data.x, y: data.y };
+
+            // Initialize a queue for each satellite if not already present
 
             if (!satelliteQueue[data.id]) {
                 satelliteQueue[data.id] = [];
             }
+            // Add the new position to the queue, and maintain queue size
             satelliteQueue[data.id].push({ x: data.x, y: data.y });
             if (satelliteQueue[data.id].length > MAX_QUEUE_SIZE) {
                 satelliteQueue[data.id].shift();
             }
-
+             // Gather x and y coordinates and IDs of all satellites for plotting
             const satelliteX = Object.values(satellitesData).map(s => s.x);
             const satelliteY = Object.values(satellitesData).map(s => s.y);
             const satelliteText = Object.keys(satellitesData);
 
+            // Update the satellite data on the plot
             Plotly.restyle('plot', {
                 x: [satelliteX],
                 y: [satelliteY],
                 text: [satelliteText]
-            }, 0);
+            }, 0); // Refers to the first trace (satellites)
         }
+        // Function to estimate the object's position based on three satellite coordinates
 
         function calculateObjectPosition() {
             const satellites = Object.values(satellitesData);
             if (satellites.length < 3) return null;
+        
+            // Extract the first three satellites' positions for calculation
 
             const [A, B, C] = satellites;
-
+            // Placeholder calculation based on triangulation method
             const a2b2 = A.x**2 + A.y**2;
             const b2a2 = B.x**2 + B.y**2;
             const c2b2 = C.x**2 + C.y**2;
-
+            // Calculate x and y based on simplified triangulation (mock example)
             const A_diff = A.x - B.x;
             const B_diff = B.y - A.y;
             const C_diff = C.x - B.x;
@@ -127,18 +143,20 @@
 
             return { x, y };
         }
+         // Update configuration settings for message frequency, satellite speed, and object speed
 
         function updateConfig() {
             const messageFrequency = document.getElementById('messageFrequency').value;
             const satelliteSpeed = document.getElementById('satelliteSpeed').value;
             const objectSpeed = document.getElementById('objectSpeed').value;
-
+              // Create a configuration object
             const config = {
                 messageFrequency: parseInt(messageFrequency),
                 satelliteSpeed: parseInt(satelliteSpeed),
                 objectSpeed: parseInt(objectSpeed)
             };
-
+            
+            // Send configuration to server via HTTP POST request
             fetch('http://localhost:4001/config', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
