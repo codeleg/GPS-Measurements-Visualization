@@ -1,0 +1,59 @@
+Necessary Information and Triangulation Method
+Triangulation is a mathematical method used to estimate the distance to an unknown point based on the known coordinates of three points. In this example, we have three satellites named A, B, and C, and we are trying to determine the position of a GPS object based on the locations of these three satellites.
+
+Detailed Explanation of the Used Formulas
+First Stage: Satellite Squared Distance Calculations
+
+javascript
+Copy code
+const a2b2 = A.x**2 + A.y**2;
+const b2a2 = B.x**2 + B.y**2;
+const c2b2 = C.x**2 + C.y**2;
+These formulas calculate:
+
+a2b2: The square of the distance from satellite A to the origin,
+b2a2: The square of the distance from satellite B to the origin,
+c2b2: The square of the distance from satellite C to the origin.
+This step finds the distance to the origin for each satellite by taking the squares of their (x, y) coordinates. This information is essential for using the triangulation method to predict the object's position.
+
+Second Stage: Calculating Differences
+
+javascript
+Copy code
+const A_diff = A.x - B.x;
+const B_diff = B.y - A.y;
+const C_diff = C.x - B.x;
+These formulas calculate:
+
+A_diff: The difference between the x-coordinate of satellite A and satellite B,
+B_diff: The difference between the y-coordinate of satellite B and satellite A,
+C_diff: The difference between the x-coordinate of satellite C and satellite B.
+These differences represent the horizontal and vertical distances between the satellites, thus defining the spatial relationships among them. We will use these differences as coefficients in the subsequent position calculations.
+
+Third Stage: Calculating the Object's (x, y) Coordinates
+
+javascript
+Copy code
+const x = (a2b2 - b2a2) / (2 * A_diff);
+const y = (a2b2 - c2b2) / (2 * B_diff);
+These formulas are used to find:
+
+x: The x-coordinate of the GPS object,
+y: The y-coordinate of the GPS object.
+The formulas here represent a simplified example of the triangulation method:
+
+We estimate the x-coordinate of the object from the distance difference between satellites A and B using (a2b2 - b2a2).
+We estimate the y-coordinate of the object from the distance difference between satellites A and C using (a2b2 - c2b2).
+We divide these calculations by twice the coefficients A_diff and B_diff. This simple triangulation method works correctly only when data is received from at least three different satellites. By considering the distances to the satellites, we find the object's (x, y) coordinates using classical triangulation.
+
+Results and Usage of These Formulas
+As a result of these calculations, we obtain the (x, y) coordinates as the position of an object. This position is used in the updateObjectPosition function to visualize the current location of the GPS object on a Plotly graph.
+
+Data Source: localhost:4001
+The coordinates for A, B, and C in the formulas come from satellite data received from the address localhost:4001. The satellitesData is updated in real-time through a WebSocket connection (socket) with every incoming message based on the satellite ID. This data includes updated satellite coordinates, and the calculateObjectPosition() function uses these coordinates to calculate the location of the GPS object.
+
+Summary:
+
+Purpose: To estimate the position of the GPS object based on the positions of three satellites.
+Function of the Formulas: To find the object's (x, y) coordinates through triangulation.
+Data Source: Live position data from satellites (localhost:4001).
