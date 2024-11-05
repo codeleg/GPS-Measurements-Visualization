@@ -2,189 +2,158 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GPS Measurements Visualization</title>
-    <!-- Plotly.js library for graphing -->
+    <title>GPS Object and Satellites Positions</title>
     <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            height: 100vh;
-            margin: 0;
-            background-color: #f5f5f5;
-        }
-        #plot {  /* Grafik alanının boyutu */
-            width: 80%;
-            height: 500px;
-        }
-        .controls {
-            margin-top: 20px;
-        }
-        .controls input {   /* Giriş alanlarının stil ayarları */
-            margin: 5px;
-        }
-    </style>
 </head>
 <body>
+    <h1>GPS Object and Satellites Positions Visualization</h1>
+    <div id="plot" style="width: 100%; height: 600px;"></div>
     
-    <h1>GPS Measurements Visualization</h1>
-    <div id="plot"></div>
+    <h3>GPS Configuration</h3>
+    <label>Message Frequency: <input id="messageFrequency" type="number" value="2"></label><br>
+    <label>Satellite Speed (km/h): <input id="satelliteSpeed" type="number" value="120"></label><br>
+    <label>Object Speed (km/h): <input id="objectSpeed" type="number" value="20"></label><br>
+    <button onclick="updateConfig()">Update Configuration</button>
+    <p id="configFeedback"></p>
 
-    <div class="controls">
-        <label for="messageFrequency">Message Frequency (messages/sec):</label>
-        <input type="number" id="messageFrequency" value="1" min="1" max="10">
-        
-        <label for="satelliteSpeed">Satellite Speed (km/h):</label>
-        <input type="number" id="satelliteSpeed" value="100">
-        
-        <label for="objectSpeed">Object Speed (km/h):</label>
-        <input type="number" id="objectSpeed" value="10">
-        
-        <button onclick="updateConfig()">Update Config</button>
-    </div>
+    <script>
+        let satelliteQueue = [];  // Queue to manage recent satellite data
+        const MAX_QUEUE_SIZE = 5; // Queue limit for each satellite
+        let satellitesData = {};  // Track satellite positions by ID
 
-      <script>
-        // Constants
-        const SPEED_OF_LIGHT = 300000; // Speed of light in km/s, used for distance calculations.
-        const ws = new WebSocket('ws://localhost:4000'); // WebSocket connection to the server.
-        let angles = [], distances = [], signalStrengths = []; // Arrays to store data for the radar plot.
-
-        // Function to update the polar plot using Plotly
-        function updatePlot() {
-            // Check if there is any data available to plot
-            if (!angles.length || !distances.length || !signalStrengths.length) {
-                console.log("No data to plot.");
-                return; // Stop if there's no data.
+        let data = [
+            {
+                x: [],
+                y: [],
+                mode: 'markers+text',
+                marker: { color: 'blue', size: 10 },
+                name: 'Satellites',
+                text: [],  // Text for annotations
+                textposition: 'top center'
+            },
+            {
+                x: [],
+                y: [],
+                mode: 'markers',
+                marker: { color: 'red', size: 15 },
+                name: 'Object'
             }
+        ];
 
-            // Define the data structure for Plotly scatterpolar chart
-            const data = [{
-                type: 'scatterpolar', // Polar scatter plot
-                r: distances, // Radial axis values (distances)
-                theta: angles, // Angular axis values (angles)
-                mode: 'markers', // Display markers at each point
-                marker: {
-                    size: 10, // Marker size
-                    color: signalStrengths, // Color based on signal strength
-                    colorscale: 'Viridis', // Use the Viridis color scale
-                    showscale: true // Show the color scale on the chart
-                }
-            }];
+        let layout = {
+            title: 'GPS Object and Satellites Positions',
+            xaxis: { title: 'X Coordinate (km)' },
+            yaxis: { title: 'Y Coordinate (km)' },
+            showlegend: true
+        };
 
-            // Layout configuration for the polar chart
-            const layout = {
-                polar: {
-                    radialaxis: {
-                        visible: true, // Show the radial axis
-                        range: [0, Math.max(...distances, 100)] // Set range based on max distance or 100
-                    },
-                    angularaxis: {
-                        direction: 'clockwise', // Angular direction is clockwise
-                        rotation: 90 // Start angle at 90 degrees
-                    }
-                },
-                showlegend: false // Disable the legend
-            };
+        Plotly.newPlot('plot', data, layout);
 
-            // Use Plotly to update the chart with the new data and layout
-            Plotly.react('myPolarChart', data, layout);
-        }
+        const socket = new WebSocket('ws://localhost:4001');
 
-        // Handle incoming WebSocket messages from the server
-        ws.onmessage = function (event) {
+        socket.onopen = () => console.log('Connected to WebSocket server');
+
+        socket.onmessage = (event) => {
             try {
-                const data = JSON.parse(event.data); // Parse incoming data as JSON
-                console.log('Received data:', data); // Log the received data
+                const message = JSON.parse(event.data);
+                console.log('Received data:', message);
 
-                // Check if the data contains scan angle and echo responses
-                if (data.scanAngle !== undefined && Array.isArray(data.echoResponses)) {
-                    // Clear the existing data arrays
-                    angles = [];
-                    distances = [];
-                    signalStrengths = [];
-
-                    // Process each echo response
-                    data.echoResponses.forEach(response => {
-                        const distance = (SPEED_OF_LIGHT * response.time) / 2; // Calculate distance
-                        angles.push(data.scanAngle); // Store the scan angle
-                        distances.push(distance); // Store the calculated distance
-                        signalStrengths.push(response.power * 100); // Store signal strength scaled by 100
-                    });
-
-                    updatePlot(); // Update the chart with the new data
+                if (message.id === 'object') {
+                    updateObjectPosition(message.x, message.y);
                 } else {
-                    console.warn('Unexpected data format:', data); // Log a warning for unexpected data
+                    updateSatellitePosition(message);
+                }
+
+                if (Object.keys(satellitesData).length >= 3) {
+                    const position = calculateObjectPosition();
+                    if (position) {
+                        updateObjectPosition(position.x, position.y);
+                    }
                 }
             } catch (error) {
-                console.error('Error parsing message:', error); // Log errors during message parsing
+                console.error('Data processing error:', error);
             }
         };
 
-        // WebSocket connection event handlers
-        ws.onopen = () => console.log('WebSocket connection opened.'); // Log when WebSocket opens
-        ws.onclose = () => console.log('WebSocket connection closed.'); // Log when WebSocket closes
-        ws.onerror = error => console.error('WebSocket error:', error); // Log WebSocket errors
+        socket.onclose = () => console.log('Connection closed');
 
-        // Function to update radar parameters via API
-        function updateRadarParams(measurementsPerRotation, rotationSpeed, targetSpeed) {
-            // Create the configuration object
-            const config = {
-                measurementsPerRotation,
-                rotationSpeed,
-                targetSpeed
-            };
+        socket.onerror = (error) => console.error('WebSocket error:', error);
 
-            console.log('Sending config to API:', config); // Log the config being sent
-
-            // Send a PUT request to the server to update the radar parameters
-            fetch('http://localhost:4000/config', {
-                method: 'PUT', // Use the PUT method
-                headers: { 'Content-Type': 'application/json' }, // Set content type as JSON
-                body: JSON.stringify(config) // Send the config as JSON in the request body
-            })
-                .then(response => {
-                    if (!response.ok) {
-                        throw new Error('Network response was not ok: ' + response.statusText); // Handle non-OK responses
-                    }
-                    return response.json(); // Parse the response as JSON
-                })
-                .then(data => {
-                    console.log('Radar parameters updated:', data); // Log the server response
-                    document.getElementById('errorMessage').textContent = ''; // Clear any error messages
-                    document.getElementById('successMessage').textContent = 'Radar parameters updated successfully!'; // Show success message
-                })
-                .catch(error => {
-                    console.error('Error updating radar parameters:', error); // Log any errors
-                    document.getElementById('errorMessage').textContent =
-                        'Error updating radar parameters: ' + error.message; // Display error message
-                    document.getElementById('successMessage').textContent = ''; // Clear success message on error
-                });
+        function updateObjectPosition(x, y) {
+            Plotly.restyle('plot', {
+                x: [[x]],
+                y: [[y]]
+            }, 1);
         }
 
-        // Event listener for the update button click event
-        document.getElementById('updateParamsBtn').addEventListener('click', function () {
-            const angle = parseInt(document.getElementById('angleInput').value, 10); // Get angle input
-            const distance = parseInt(document.getElementById('distanceInput').value, 10); // Get distance input
-            const signalStrength = parseInt(document.getElementById('signalStrengthInput').value, 10); // Get signal strength input
+        function updateSatellitePosition(data) {
+            satellitesData[data.id] = { x: data.x, y: data.y };
 
-            // Validate the input values
-            if (isNaN(angle) || isNaN(distance) || isNaN(signalStrength) || angle < 0 || angle > 360 || distance < 0 || signalStrength < 0) {
-                document.getElementById('errorMessage').textContent = 'Please enter valid numbers!'; // Show error message
-                document.getElementById('successMessage').textContent = ''; // Clear success message
-                return; // Stop further execution on invalid input
+            if (!satelliteQueue[data.id]) {
+                satelliteQueue[data.id] = [];
+            }
+            satelliteQueue[data.id].push({ x: data.x, y: data.y });
+            if (satelliteQueue[data.id].length > MAX_QUEUE_SIZE) {
+                satelliteQueue[data.id].shift();
             }
 
-            updateRadarParams(angle, distance, signalStrength); // Update radar parameters using the inputs
-        });
+            const satelliteX = Object.values(satellitesData).map(s => s.x);
+            const satelliteY = Object.values(satellitesData).map(s => s.y);
+            const satelliteText = Object.keys(satellitesData);
 
-        // Initial parameter setup when the script loads
-        updateRadarParams(360, 10, 500); // Set default radar parameters
+            Plotly.restyle('plot', {
+                x: [satelliteX],
+                y: [satelliteY],
+                text: [satelliteText]
+            }, 0);
+        }
 
+        function calculateObjectPosition() {
+            const satellites = Object.values(satellitesData);
+            if (satellites.length < 3) return null;
+
+            const [A, B, C] = satellites;
+
+            const a2b2 = A.x**2 + A.y**2;
+            const b2a2 = B.x**2 + B.y**2;
+            const c2b2 = C.x**2 + C.y**2;
+
+            const A_diff = A.x - B.x;
+            const B_diff = B.y - A.y;
+            const C_diff = C.x - B.x;
+
+            const x = (a2b2 - b2a2) / (2 * A_diff);
+            const y = (a2b2 - c2b2) / (2 * B_diff);
+
+            return { x, y };
+        }
+
+        function updateConfig() {
+            const messageFrequency = document.getElementById('messageFrequency').value;
+            const satelliteSpeed = document.getElementById('satelliteSpeed').value;
+            const objectSpeed = document.getElementById('objectSpeed').value;
+
+            const config = {
+                messageFrequency: parseInt(messageFrequency),
+                satelliteSpeed: parseInt(satelliteSpeed),
+                objectSpeed: parseInt(objectSpeed)
+            };
+
+            fetch('http://localhost:4001/config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(config)
+            })
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('configFeedback').textContent = 'Configuration updated successfully!';
+                    console.log('Config updated:', data);
+                })
+                .catch(error => {
+                    document.getElementById('configFeedback').textContent = 'Error updating configuration';
+                    console.error('Error updating config:', error);
+                });
+        }
     </script>
-
 </body>
 </html>
